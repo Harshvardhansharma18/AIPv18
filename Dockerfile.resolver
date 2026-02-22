@@ -1,0 +1,27 @@
+FROM node:20-alpine AS base
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY sdk/package.json ./sdk/
+COPY resolver/package.json ./resolver/
+
+RUN npm install --legacy-peer-deps
+
+COPY sdk/ ./sdk/
+COPY resolver/ ./resolver/
+
+RUN npm -w @agent-identity/sdk run build
+RUN npm -w @agent-identity/resolver run build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=base /app/node_modules ./node_modules
+COPY --from=base /app/sdk/dist ./sdk/dist
+COPY --from=base /app/sdk/package.json ./sdk/
+COPY --from=base /app/resolver/dist ./resolver/dist
+COPY --from=base /app/resolver/package.json ./resolver/
+COPY --from=base /app/package.json ./
+
+EXPOSE 3001
+CMD ["node", "resolver/dist/index.js"]

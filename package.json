@@ -1,0 +1,43 @@
+{
+  "name": "agent-identity-protocol",
+  "version": "1.0.0",
+  "description": "Decentralized identity and composable reputation middleware for AI agents and smart accounts",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "workspaces": [
+    "sdk",
+    "indexer",
+    "resolver",
+    "contracts",
+    "examples/*"
+  ],
+  "scripts": {
+    "preview": "npx --yes http-server -p 8000",
+    "dev": "docker compose up -d postgres ipfs anvil && sleep 2 && npm run deploy:local && concurrently \"npm run dev:indexer\" \"npm run dev:resolver\"",
+    "dev:indexer": "npm -w @agent-identity/indexer run dev",
+    "dev:resolver": "npm -w @agent-identity/resolver run dev",
+    "deploy:local": "cd contracts && forge script script/DeployLocal.s.sol --rpc-url http://127.0.0.1:8545 --broadcast",
+    "deploy:sepolia": "cd contracts && forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY -vvvv",
+    "deploy:testnet": "cd contracts && forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --verify",
+    "deploy:mainnet": "cd contracts && forge script script/Deploy.s.sol --rpc-url $MAINNET_RPC_URL --broadcast --verify",
+    "test:contracts": "cd contracts && forge test -vvv",
+    "test:sdk": "npm -w @agent-identity/sdk run test",
+    "test:indexer": "npm -w @agent-identity/indexer run test",
+    "test:resolver": "npm -w @agent-identity/resolver run test",
+    "test": "npm run test:contracts && npm run test:sdk && npm run test:indexer && npm run test:resolver",
+    "demo": "npm -w @agent-identity/e2e-demo run demo",
+    "build": "npm -w @agent-identity/sdk run build && npm -w @agent-identity/indexer run build && npm -w @agent-identity/resolver run build",
+    "clean": "rm -rf sdk/dist indexer/dist resolver/dist contracts/broadcast contracts/cache",
+    "stop": "docker compose down",
+    "logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "@vercel/node": "^3.2.0",
+    "concurrently": "^9.0.1",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

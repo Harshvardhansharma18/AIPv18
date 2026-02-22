@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "buildCommand": "npm install --legacy-peer-deps && npm -w @agent-identity/sdk run build && npm -w @agent-identity/resolver run build",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/[[...path]]" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/sync",
+      "schedule": "* * * * *"
+    }
+  ],
+  "functions": {
+    "api/[[...path]].ts": {
+      "maxDuration": 30
+    },
+    "api/cron/sync.ts": {
+      "maxDuration": 60
+    }
+  },
+  "env": {
+    "NODE_ENV": "production"
+  }
+}

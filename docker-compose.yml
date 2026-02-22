@@ -1,0 +1,90 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aip-postgres
+    environment:
+      POSTGRES_DB: agent_identity
+      POSTGRES_USER: agent_identity
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_identity"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aip-network
+
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: aip-ipfs
+    ports:
+      - "5001:5001"  # API
+      - "8080:8080"  # Gateway
+    volumes:
+      - ipfs_data:/data/ipfs
+    environment:
+      - IPFS_PROFILE=server
+    networks:
+      - aip-network
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    container_name: aip-anvil
+    entrypoint: ["anvil", "--host", "0.0.0.0", "--chain-id", "31337", "--block-time", "1"]
+    ports:
+      - "8545:8545"
+    networks:
+      - aip-network
+
+  indexer:
+    build:
+      context: ./indexer
+      dockerfile: Dockerfile
+    container_name: aip-indexer
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://agent_identity:devpassword@postgres:5432/agent_identity
+      RPC_URL: http://anvil:8545
+      CHAIN_ID: "31337"
+      POLL_INTERVAL_MS: "1000"
+      LOG_LEVEL: info
+    env_file: .env.local
+    networks:
+      - aip-network
+    restart: unless-stopped
+
+  resolver:
+    build:
+      context: ./resolver
+      dockerfile: Dockerfile
+    container_name: aip-resolver
+    depends_on:
+      - postgres
+      - indexer
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://agent_identity:devpassword@postgres:5432/agent_identity
+      PORT: "3001"
+      NODE_ENV: development
+      LOG_LEVEL: info
+    env_file: .env.local
+    networks:
+      - aip-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  ipfs_data:
+
+networks:
+  aip-network:
+    driver: bridge

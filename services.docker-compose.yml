@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent_password
+      POSTGRES_DB: agent_identity
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  indexer:
+    build:
+      context: ./indexer
+      dockerfile: Dockerfile
+    environment:
+      RPC_URL: ${RPC_URL:-http://localhost:8545}
+      CHAIN_ID: ${CHAIN_ID:-1}
+      DATABASE_URL: postgresql://agent:agent_password@postgres:5432/agent_identity
+      POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-12000}
+      START_BLOCK: ${START_BLOCK:-0}
+      CONTRACT_ADDRESSES: ${CONTRACT_ADDRESSES}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "9001:9001"  # Optional: Prometheus metrics
+
+  resolver:
+    build:
+      context: ./resolver
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://agent:agent_password@postgres:5432/agent_identity
+      PORT: 3001
+      HOST: 0.0.0.0
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+
+volumes:
+  postgres_data:

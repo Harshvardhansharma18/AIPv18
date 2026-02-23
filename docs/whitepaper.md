@@ -8,9 +8,9 @@
 
 The emergence of autonomous AI agents as economic actors introduces a fundamental challenge to decentralized systems: how to establish persistent identity and verifiable reputation for entities that operate continuously across multiple blockchains and applications without human intermediaries. Existing identity solutions—including the Ethereum Naming Service (ENS), Ethereum Attestation Service (EAS), and W3C Decentralized Identifiers (DIDs)—were designed for human-centric use cases and fail to address the unique requirements of autonomous agents: unbounded action capability, hierarchical delegation, cross-chain operation, and rapid reputation accumulation.
 
-The Agent Identity Protocol (AIP) introduces a purpose-built decentralized identity and reputation system specifically optimized for AI agents and smart accounts. AIP provides four foundational capabilities: (1) cryptographically anchored, chain-agnostic identities persistent across blockchains, (2) composable hierarchical delegation enabling fine-grained authority distribution, (3) verifiable reputation with cryptographic proofs and privacy-preserving selective disclosure, and (4) integration with ERC-4337 Account Abstraction and Safe smart wallets. The protocol achieves gas efficiency through off-chain computation with deterministic replay validation, implements Sybil resistance through cost-of-entry analysis and freshness-based decay, and maintains privacy through zero-knowledge ready architecture.
+The Agent Identity Protocol (AIP) introduces a purpose-built decentralized identity and reputation system specifically optimized for AI agents and smart accounts. AIP provides four foundational capabilities: (1) cryptographically anchored, chain‑portable identities with a canonical root of trust and pluggable roots, (2) composable hierarchical delegation enabling fine‑grained authority distribution, (3) verifiable reputation with cryptographic proofs and privacy‑preserving selective disclosure, and (4) integration with ERC‑4337 Account Abstraction and Safe smart wallets. The protocol achieves gas efficiency through off‑chain computation with deterministic replay validation, implements Sybil cost amplification and detectability through issuer weighting and freshness‑based decay, and maintains privacy through a payload‑minimization, zero‑knowledge–ready architecture.
 
-This whitepaper formally specifies the AIP design goals, system architecture, cryptographic primitives, reputation computation model, security assumptions, and threat model. We analyze attack vectors including key compromise, Sybil farming, malicious issuers, indexer manipulation, and delegation hijacking, detailing mitigations for each. We demonstrate how AIP enables trustworthy agent-to-agent and agent-to-human interactions in decentralized networks where identity accountability has been previously infeasible.
+This whitepaper formally specifies the AIP design goals, system architecture, cryptographic primitives, reputation computation model, security assumptions, and threat model. AIP is an identity + delegation + reputation + indexing trust middleware layer. We analyze attack vectors including key compromise, Sybil farming, malicious issuers, indexer manipulation, and delegation hijacking, detailing mitigations for each. We demonstrate how AIP enables trustworthy agent-to-agent and agent-to-human interactions in decentralized networks where identity accountability has been previously infeasible.
 
 ---
 
@@ -94,16 +94,17 @@ For high-value interactions, this latency is unacceptable. AIP solves this with 
 
 The Agent Identity Protocol is guided by seven core design goals:
 
-### G1: Chain-Agnostic Identity Persistence
+### G1: Chain‑Portable Identity with Canonical Root of Trust
 
-**Goal**: An agent maintains a single, persistent identity (DID) that operates across multiple blockchains without requiring chain-specific modifications or separate addresses per chain.
+**Goal**: An agent maintains a single, persistent identity (DID) that operates across multiple blockchains without requiring chain‑specific modifications or separate addresses per chain, anchored to a canonical root of trust with support for pluggable roots.
 
 **Rationale**: Agents operate in multi-chain environments. Forcing chain-specific identities creates fragmentation, increases Sybil attack surface, and prevents reputation portability.
 
 **Approach**: 
-- Identities are anchored to Ethereum mainnet DIDRegistry via immutable smart contract events
-- Agents establish chain-local delegation entries via DelegationRegistry on each chain they operate on
-- Resolver service aggregates state across all chains to provide unified identity resolution
+- Default canonical root is an L1 (e.g., Ethereum) DIDRegistry; deployments MAY opt into alternative or multiple roots
+- Pluggable root-of-trust module allows additional L1s; light‑client verification or message‑verified roots used to attest alternate roots
+- Agents establish chain‑local delegation entries via DelegationRegistry on each chain they operate on
+- Resolver service aggregates state across all chains to provide unified identity resolution while preserving chain‑local authorization semantics
 
 ### G2: Composable, Hierarchical Delegation
 
@@ -136,15 +137,16 @@ The Agent Identity Protocol is guided by seven core design goals:
 
 ### G4: Privacy-Preserving by Default
 
-**Goal**: Minimize sensitive information leaked on-chain while maintaining verifiability.
+**Goal**: Minimize sensitive information recorded on‑chain while maintaining verifiability and acknowledging that metadata (issuer, timing, graph structure) may remain observable.
 
 **Rationale**: Agent behavior patterns (attestation issuers, delegation targets) may be commercially sensitive. Privacy by default protects agents while supporting selective disclosure when needed.
 
 **Approach**:
-- On-chain, only attestation UIDs are recorded, not full attestation data
+- On‑chain, only attestation UIDs and minimal commitment data are recorded; payloads remain off‑chain
 - Schemas and attestation data stored on IPFS, accessible only by possession of UID
-- Reputation scores computed off-chain, disclosed selectively via Merkle proofs
-- Future: ZK circuits for privacy-preserving reputation proofs
+- Reputation scores computed off‑chain, disclosed selectively via Merkle proofs
+- Optional privacy patterns: delayed batch attestations, stealth addressing, and zk attestation commitments
+- Future: ZK circuits for privacy‑preserving reputation proofs
 
 ### G5: Gas-Efficient On-Chain Footprint
 
@@ -161,6 +163,7 @@ The Agent Identity Protocol is guided by seven core design goals:
 
 **Target gas costs**:
 - Register identity: 100k gas (≈$3)
+- Identity bond: $5 (bonded_identity; refundable on deactivation, slashable on fraud)
 - Rotate key: 50k gas (≈$1.50)
 - Create delegation: 80k gas (≈$2.50)
 - Attestation (via EAS): 60k gas (≈$1.50)
@@ -192,6 +195,14 @@ The Agent Identity Protocol is guided by seven core design goals:
 - No centralized gatekeeper; identity resolution is permissionless
 - Reputation computation is deterministic and auditable
 - Schemas stored on IPFS; any node can host a gateway
+
+### 2.1 Agent‑Native Identity Requirements
+
+To serve autonomous agents operating at machine speed, AIP satisfies:
+- Continuous operation: identity, delegation, and verification without human gating
+- Machine‑speed delegation: low‑latency creation, verification, and revocation of capabilities
+- Autonomous key rotation: policy‑driven rotation and recovery without manual intervention
+- Authority graph composition: verifiable, bounded‑depth chains of delegations across contexts and chains
 
 ---
 
@@ -395,22 +406,26 @@ Client can prove on-chain:
   merkleProve(did, score, proof, root) → true/false
 ```
 
-### 3.4 Chain Abstraction
+### 3.4 Chain Abstraction and Roots of Trust
 
-AIP supports multi-chain operation through a delegated authority model:
+AIP supports multi‑chain operation through chain‑local authorization and a canonical root‑of‑trust model:
 
-**Mainnet (Ethereum)**: Authoritative identity registry
-- DIDRegistry contracts
+**Canonical Root (default Ethereum)**:
+- DIDRegistry contracts (canonical identity anchors)
 - AttestationRegistry / EAS
 - SchemaRegistry
 - RevocationRegistry
 
-**Secondary Chains** (Polygon, Optimism, Arbitrum, etc.):
-- DelegationRegistry (per-chain)
-- Events indexed locally
-- Unified resolution via mainnet DID reference
+**Additional Roots (optional)**:
+- Pluggable additional L1 roots registered via on‑chain root registry
+- Verification via light‑client proofs or message‑verified attestations to the canonical root
 
-**Cross-Chain Flow**:
+**Secondary Chains** (Polygon, Optimism, Arbitrum, etc.):
+- DelegationRegistry (per‑chain) enforces chain‑local authorization trustlessly
+- Events indexed locally and aggregated off‑chain for views; cross‑chain proofs required for on‑chain consumption
+- Unified resolution references canonical DID plus proven cross‑chain links
+
+**Cross‑Chain Flow (message‑verified delegation)**:
 ```
 Agent on Polygon → DelegationRegistry.create(
   delegator_did: "did:aip:0x...",  // Mainnet identity
@@ -419,13 +434,13 @@ Agent on Polygon → DelegationRegistry.create(
   chainId: 137  // Polygon
 )
   ↓
-Event emitted on Polygon
+Event emitted on Polygon (chain‑local authority)
   ↓
 Polygon Indexer subscribes to DelegationRegistry events
   ↓
 Database stores: (did, delegate, scope, chain=137)
   ↓
-Mainnet Resolver aggregates Polygon delegations
+To verify cross‑chain on‑chain, submit message‑verified proof (or light‑client proof) to a verifier contract
   ↓
 GET /delegations/{did}?chain=137 → Returns Polygon delegations
 ```
@@ -517,6 +532,14 @@ function executeRecovery(bytes32 did) external {
 - Gives the legitimate controller time to notice and counter the recovery
 - Prevents instant account takeover if a guardian is compromised
 - Allows revocation of malicious guardians before recovery finalizes
+
+#### Automated Guardians and Policy‑Based Recovery
+
+To align with autonomous agents operating at machine speed:
+- Agents MAY register automated guardian agents (risk oracles) authorized to initiate rotation/recovery based on programmable policies
+- Policies can include anomaly detection thresholds, transaction rate spikes, or external risk signals
+- Automated guardians are part of the m‑of‑n threshold and are gated by the same timelock to prevent immediate takeover
+- Example policy: “If compromise_probability ≥ 0.7, initiate key rotation and alert human guardians”
 
 #### Storage Layout
 
@@ -776,22 +799,32 @@ function hasCapability(
     address delegateAddress,
     uint256 capability
 ) external view returns (bool) {
-    bytes32[] memory delegationIds = delegationsByDelegate[delegateAddress];
-    
-    for (uint i = 0; i < delegationIds.length; i++) {
-        Delegation storage d = delegations[delegationIds[i]];
-        
-        if (d.delegator == delegatorDID &&
-            d.chainId == block.chainid &&
-            block.timestamp <= d.expiryTime &&
-            (d.scope & capability) != 0) {
-            return true;
-        }
-    }
-    
-    return false;
+    // O(1) indexed lookup by (delegator, delegate, chain, capability)
+    return activeCapability[delegatorDID][delegateAddress][block.chainid][capability];
 }
 ```
+
+#### Namespaced Capabilities
+
+To prevent semantic collisions across protocols, capabilities are namespaced:
+- Capability identifiers are fully qualified as `namespace.capability` (e.g., `dex.swap`, `token.transfer`)
+- A registry maps fully qualified names to stable bit positions per namespace:
+  - `bit = keccak256(namespace || capability) mod 256` within a namespace slot
+  - Namespaces are registered on‑chain with an admin and versioning
+- Applications must validate namespace and version when interpreting scopes
+
+#### Protocol‑Level Hop Limit
+
+Delegation chain verification enforces a protocol‑level hop limit `HOP_LIMIT`:
+- `HOP_LIMIT` prevents DoS from deep chains and ensures predictable verification cost
+- Verification algorithms MUST abort if the chain exceeds `HOP_LIMIT`
+
+#### Indexed Mappings for Bounded Verification
+
+To avoid unbounded iteration, the registry maintains indexed mappings:
+- `activeCapability[delegator][delegate][chainId][capability] = bool` for O(1) authorization checks
+- Updates on create/revoke keep the index consistent
+- For audit/reconstruction, append‑only event logs are the ground truth; index is a view
 
 #### Chain-of-Authority
 
@@ -1083,7 +1116,17 @@ Scenario: Controller key lost or compromised
 
 ## 6. Reputation Computation Model
 
-Reputation is a quantitative trust score reflecting an agent's behavior history and social proof.
+Reputation reflects an agent's behavior history and social proof. AIP adopts a vector reputation model to preserve domain context and avoid lossy scalar aggregation.
+
+### 6.0 Reputation Vector and Contexts
+
+Each agent has a vector of scores by context:
+- `risk`: operational safety and compromise probability
+- `credit`: repayment likelihood and financial behavior
+- `ops`: execution reliability and liveness
+- `social`: community attestations and endorsements
+
+Applications select one or more contexts relevant to their decision. A scalar can be derived as a context‑weighted projection when required, but vectors are the default representation.
 
 ### 6.1 Reputation Graph Structure
 
@@ -1151,31 +1194,35 @@ Impact:
 #### 6.2.3 Activity Score
 
 ```
-activity_score = consistency_score + on_chain_frequency + zero_compromise
+activity_score = consistency_score + on_chain_frequency + no_detected_compromise
 
 where:
   consistency_score = 5 if (txn_count > 10 AND days_active > 30)
                       else min(5, txn_count / 10) + min(5, days_active / 30)
   
   on_chain_frequency = min(3, recent_txn_count_7d / 10)
-  
-  zero_compromise = 5 if identity never compromised
-                    0 otherwise
+
+  no_detected_compromise = 5 × (1 − compromise_probability)
+  compromise_probability ∈ [0,1] from signals (anomaly, guardian alerts, rate spikes)
+
+# Chain-normalized activity:
+# For each chain c, compute z-score or percentile of agent's activity relative to chain throughput,
+# then aggregate across chains to prevent bias toward high-throughput chains.
 ```
 
 **Example**:
 - Agent with 50 transactions over 60 days, 10 txns in last 7 days, never compromised
 - consistency_score = 5 + min(3, 50/10) + min(5, 60/30) = 5 + 3 + 2 = 10
 - on_chain_frequency = min(3, 10/10) = 1
-- zero_compromise = 5
+- no_detected_compromise = 5
 - activity_score = 10 + 1 + 5 = 16 (max capped at 20)
 
 ### 6.3 Weighted Aggregation
 
-Final reputation score = (attestation_score × 0.4) + (delegation_score × 0.3) + (activity_score × 0.3)
+Context scores are computed via weighted sums, then optionally projected to a scalar:
 
 ```python
-def compute_reputation(did: str) -> int:
+def compute_reputation_vector(did: str) -> Dict[str, int]:
     attestations = get_valid_attestations(did)
     delegations = get_delegations_to(did)
     activity = get_activity_history(did)
@@ -1184,37 +1231,46 @@ def compute_reputation(did: str) -> int:
     del_score = compute_delegation_score(delegations)        # 0-25
     act_score = compute_activity_score(activity)             # 0-20
     
-    total = (att_score * 0.4) + (del_score * 0.3) + (act_score * 0.3)
-    
-    # Clamp to 0-100
-    return min(100, max(0, round(total)))
+    # Context mappings (example defaults; application-specific weights can differ)
+    risk    = round(att_score * 0.2 + del_score * 0.3 + act_score * 0.5)
+    credit  = round(att_score * 0.5 + del_score * 0.2 + act_score * 0.3)
+    ops     = round(att_score * 0.2 + del_score * 0.2 + act_score * 0.6)
+    social  = round(att_score * 0.6 + del_score * 0.3 + act_score * 0.1)
+
+    return { "risk": risk, "credit": credit, "ops": ops, "social": social }
+
+def project_scalar(rep_vec: Dict[str, int], weights: Dict[str, float]) -> int:
+    return min(100, max(0, round(
+        rep_vec["risk"]*weights.get("risk",0.25) +
+        rep_vec["credit"]*weights.get("credit",0.25) +
+        rep_vec["ops"]*weights.get("ops",0.25) +
+        rep_vec["social"]*weights.get("social",0.25)
+    )))
 ```
 
-### 6.4 Merkle Proof Generation
+### 6.4 Commitments and Proofs
 
-To enable on-chain verification, reputation is published as Merkle tree:
+To enable on‑chain verification, reputation is published using incremental commitments. Each DID produces a commitment over its vector:
 
 ```python
-def generate_reputation_merkle_tree():
+def generate_reputation_commitments():
     # Get all active DIDs with scores
-    dids_and_scores = [
-        (did_1, score_1),
-        (did_2, score_2),
+    dids_and_vectors = [
+        (did_1, {"risk": r1, "credit": c1, "ops": o1, "social": s1}),
+        (did_2, {"risk": r2, "credit": c2, "ops": o2, "social": s2}),
         ...
-        (did_n, score_n)
+        (did_n, {"risk": rn, "credit": cn, "ops": on, "social": sn})
     ]
     
     # Sort lexicographically for determinism
-    dids_and_scores.sort(key=lambda x: x[0])
+    dids_and_vectors.sort(key=lambda x: x[0])
     
     # Create leaves
-    leaves = [
-        keccak256(abi.encode(did, score))
-        for (did, score) in dids_and_scores
-    ]
+    leaves = [keccak256(abi.encode(did, vec["risk"], vec["credit"], vec["ops"], vec["social"]))
+              for (did, vec) in dids_and_vectors]
     
-    # Build Merkle tree
-    tree = MerkleTree(leaves)
+    # Build incremental Merkle tree (append-only epochs)
+    tree = IncrementalMerkleTree(leaves)
     
     return {
         'root': tree.root,
@@ -1227,11 +1283,14 @@ def generate_reputation_merkle_tree():
 ```solidity
 function verifyReputationProof(
     bytes32 did,
-    uint256 score,
+    uint256 risk,
+    uint256 credit,
+    uint256 ops,
+    uint256 social,
     bytes32[] memory proof,
     bytes32 merkleRoot
 ) public pure returns (bool) {
-    bytes32 leaf = keccak256(abi.encode(did, score));
+    bytes32 leaf = keccak256(abi.encode(did, risk, credit, ops, social));
     return verify(proof, merkleRoot, leaf);
 }
 ```
@@ -1302,6 +1361,17 @@ def batch_reputation(dids: List[str]) -> Dict[str, int]:
 
 ---
 
+### 6.7 Reputation Root Publication and Finality
+
+To provide economic security for published roots:
+- Bonded Root Submitters stake collateral on‑chain in a ReputationRoot contract and periodically publish epoch roots
+- Optimistic updates: roots become usable after a challenge window (e.g., 30 minutes)
+- Anyone can submit a fraud proof by recomputing the epoch and providing a counter‑example; successful challenges slash the submitter’s bond
+- Multiple submitters may publish; consumers MAY take the median/majority across submitters
+- Update cadence and epoch parameters are fixed per deployment and announced via on‑chain config
+
+---
+
 ## 7. Trust and Security Assumptions
 
 ### 7.1 Trust Boundaries
@@ -1311,8 +1381,8 @@ def batch_reputation(dids: List[str]) -> Dict[str, int]:
 │  TRUST BOUNDARY 1: Blockchain           │
 │  ├─ Smart contracts are correct         │
 │  ├─ Events are immutable                │
-│  ├─ Consensus is final (12+ blocks)     │
-│  └─ Assumption: Honest majority of miners
+│  ├─ Consensus finalizes at epoch cadence │
+│  └─ Assumption: Honest majority of validators
 └─────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────┐
@@ -1440,7 +1510,7 @@ Cost for attacker to create N Sybil agent identities:
 Cost = N * (identity_creation_fee + attestation_cost)
 
 where:
-  identity_creation_fee = 0 (registration is free, only gas)
+  identity_creation_fee = $5 bonded_identity (stake held, slashable on fraud)
   attestation_cost = gas_cost + issuer_fee (varies by schema)
   typical_gas_cost = 60k gas ≈ $2 (at $30 gwei)
   typical_issuer_fee = $1-100 depending on schema
@@ -1489,8 +1559,21 @@ def detect_sybil_cluster(agents: List[str]) -> List[List[str]]:
 
 **Mitigations**:
 1. **Freshness Penalties**: Attestations from agents created in same hour have reduced weight
-2. **Issuer Diversification**: Reputation weighted by issuer diversity
+2. **Issuer Diversification**: Reputation weighted by issuer diversity with eigenvector‑style weighting
 3. **Time Locks**: New identities have reputation caps for first 30 days
+4. **Scarce Resource Requirements**: Stake‑weighted identity or bonded issuers for high‑impact schemas; slashing on fraud
+
+#### Collusion and Equilibrium Considerations
+
+We model a two‑player game between honest issuers and colluding issuers/subjects:
+- Payoffs incorporate attestation revenue, bond risk (slashing), and long‑term utility
+- Equilibrium favors honesty when (slashing_probability × bond) > collusion payoff
+- Diminishing returns: repeated cross‑attestation among tightly connected clusters is down‑weighted via eigenvector weighting and issuer diversity penalties
+Deployment parameters are published per epoch to enable external audits.
+
+#### Cryptoeconomic Checks
+- SYBIL_BREAK_EVEN: Report cost_to_profit_ratio for attack scenarios using current bond and fee parameters
+- COLLUSION_EQUILIBRIUM: Publish minimum_collusion_size_for_attack under current weights and slashing probabilities
 
 ### 7.5 Malicious Issuer
 
@@ -1618,6 +1701,15 @@ if (claimedRoot != recomputedRoot) {
 }
 ```
 
+### 7.8 Resolver Liveness and Local Determinism
+
+To avoid centralized liveness dependency on any resolver:
+- Clients MAY run a local deterministic mode that replays events and recomputes state from checkpoints
+- The project distributes periodic state snapshots (epoch checkpoints) signed by multiple submitters
+- If the resolver is unavailable, clients can verify roots and proofs against local recomputation and cached snapshots
+- Applications MAY query multiple resolver instances and take the median/majority score
+- The REST API is a convenience layer; all critical verification paths have on‑chain or recomputable proofs
+
 ### 7.7 Smart Contract Attack Vectors
 
 #### Reentrancy
@@ -1648,6 +1740,7 @@ function attestAndPay(bytes32 subject, uint256 amount) external {
 - Use Checks-Effects-Interactions pattern
 - All external calls are at end of function
 - State updated before event emission
+- Nonce-based sequencing for sensitive operations (rotation, delegation changes)
 
 #### Replay Attacks
 
@@ -1689,6 +1782,47 @@ Scenario:
 
 ---
 
+## Governance and Parameterization
+
+### Modes
+- Permissionless Mode: Anyone can register identities and issue attestations subject to bonded roles and base rules.
+- Curated Mode: Additional allowlists (e.g., issuer allowlists, namespace admins) enforced per deployment.
+
+### Roles and Capabilities
+- RootSubmitter: Publishes epoch reputation roots; bonded and slashable; subject to challenge window.
+- Challenger: Anyone can submit fraud proofs; earns a portion of slashed bond upon valid challenge.
+- NamespaceAdmin: Manages capability namespaces and versions; approves namespace admission in curated mode.
+- SchemaAdmin: Manages schema allowlists and versioning; can restrict issuers per schema.
+- ParameterGovernor: Proposes parameter changes (weights, HOP_LIMIT, epoch cadence); subject to timelock and quorum.
+
+### Upgrade and Parameter Changes
+- Contracts are immutable; no upgradeable proxies.
+- Parameters live in on‑chain ConfigRegistry controlled by a timelocked governor.
+- Upgrade Timelock: Minimum delay (e.g., 48h) between proposal and execution for parameter changes.
+- Process: Propose → Queue (timelock) → Execute; emergency pause only for non‑critical off‑chain services (resolver), never on critical on‑chain paths.
+
+### Arbiter Selection
+- Governor can be a multisig, DAO, or token‑weighted module; deployments must publish governance details and keys.
+- Arbitration for disputes (e.g., schema abuse) resolved via governance votes; results reflected as parameter changes or allowlist updates.
+
+### Namespace Admission
+- Permissionless: Anyone may propose a new `namespace.capability` with unique hash; takes effect after timelock.
+- Curated: NamespaceAdmin must approve; conflicts resolved by governance.
+
+### Published Parameters
+- HOP_LIMIT, epoch length, challenge window, bond sizes, default reputation weights, chain normalization strategy.
+- All published on‑chain and versioned; clients include parameter version in signatures and proofs where applicable.
+
+### Readiness Matrix
+- MVP blockers addressed:
+  - Reputation root cryptoeconomics: bonded submitters + challenge window + slashing.
+  - Delegation DoS path: HOP_LIMIT + indexed mappings and chain‑local checks.
+  - Governance control surface: roles, timelock, parameters defined above.
+- Testnet requirements satisfied:
+  - Checkpoint sync and local deterministic mode specified in liveness section.
+- Mainnet requirements included:
+  - Stake/slashing mechanism, multi‑publisher policy, vector reputation activation and commitments.
+
 ## 8. Privacy Model
 
 ### 8.1 On-Chain Privacy Tradeoffs
@@ -1703,8 +1837,8 @@ AIP design       MEDIUM           HIGH
 No privacy        LOW             HIGH
 
 AIP Design Tradeoffs:
-- On-chain: Only UIDs visible (no issuer, schema, or data)
-- Off-chain: Full data accessible with UID (no encryption)
+- On-chain: Payload minimization—only UIDs and minimal commitments; issuer/schema/timestamp may be observable via events
+- Off-chain: Full data accessible with UID (encryption optional per deployment)
 - Application: Application decides what to share
 ```
 
@@ -1737,7 +1871,12 @@ client.getAttestationData(uid)
 // Returns zk-proof that "id_verified == true" without revealing other fields
 ```
 
-### 8.3 Future: ZK-based Credential Presentation
+### 8.3 Privacy Model Checks
+
+- ONCHAIN_MINIMIZATION: Attestation payloads are not stored on‑chain; only UIDs and minimal commitments appear.
+- GRAPH_LEAKAGE_AWARENESS: Timing and interaction patterns may leak metadata; applications should batch and randomize where feasible.
+
+### 8.4 Future: ZK-based Credential Presentation
 
 Future versions will support zero-knowledge proofs:
 
@@ -1756,7 +1895,7 @@ function verifyReputationProof(
 }
 ```
 
-### 8.4 Data Minimization
+### 8.5 Data Minimization
 
 AIP follows data minimization principles:
 
